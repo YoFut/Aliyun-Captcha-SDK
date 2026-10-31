@@ -1,4 +1,4 @@
-module github.com/YoFut/Aliyun-Captcha-SDK.git
+module github.com/YoFut/Aliyun-Captcha-SDK
 
 go 1.26.9
 
