@@ -14,7 +14,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/YoFut/Aliyun-Captcha-SDK.git/captcha"
+	"github.com/YoFut/Aliyun-Captcha-SDK/captcha"
 )
 
 // verifier 只暴露示例所需的公开配置和验签能力，不接触调用方凭据。

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/YoFut/Aliyun-Captcha-SDK.git/captcha"
+	"github.com/YoFut/Aliyun-Captcha-SDK/captcha"
 )
 
 // stub 提供固定验签结果，避免契约测试调用云接口。
