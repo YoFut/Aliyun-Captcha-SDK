@@ -1,0 +1,17 @@
+# 调用方读取并解码此配置；敏感凭据请使用环境变量或安全的凭据管理服务。
+region = "cn"
+prefix = ""
+# timeout_ms = 5000 # 请求总超时，单位毫秒；程序直接设置时使用 Timeout。
+# endpoint = "captcha.cn-shanghai.aliyuncs.com"
+# access_key_id = ""
+# access_key_secret = ""
+# security_token = ""
+# role_name = ""
+
+[scenes]
+# 填入实际需要的场景；未使用的键保持注释，不以空场景授予验证能力。
+"one-click" = ""
+# traceless = ""
+# slider = ""
+# puzzle = ""
+# "image-restore" = ""
