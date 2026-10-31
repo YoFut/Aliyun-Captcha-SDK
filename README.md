@@ -16,13 +16,13 @@
 
 ## Go 调用
 
-本地服务可先执行 `go mod edit -replace=github.com/YoFut/Aliyun-Captcha-SDK.git=D:/GitHub/future-yo/Aliyun-Captcha-SDK`，导入下面的包后执行 `go mod tidy`；仓库发布后再使用对应的模块版本。
+本地服务可先执行 `go mod edit -replace=github.com/YoFut/Aliyun-Captcha-SDK=D:/GitHub/future-yo/Aliyun-Captcha-SDK`，导入下面的包后执行 `go mod tidy`；仓库发布后再使用对应的模块版本。
 
 ```go
 import (
     "context"
     "errors"
-    "github.com/YoFut/Aliyun-Captcha-SDK.git/captcha"
+    "github.com/YoFut/Aliyun-Captcha-SDK/captcha"
 )
 
 client, err := captcha.NewClient(captcha.WithConfig(captcha.Config{
