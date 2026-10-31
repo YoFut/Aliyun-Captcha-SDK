@@ -1,0 +1,30 @@
+# SDK 门禁只运行隔离测试及构建，不配置云凭据、不访问真实验证场景。
+name: SDK 检查
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: true
+      - run: go test ./...
+      - run: go vet ./...
+      - run: go build ./...
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install --global pnpm@10.26.2
+      - run: pnpm --dir web install --frozen-lockfile
+      - run: pnpm --dir web test
+      - run: pnpm --dir web exec tsc --noEmit
+      - run: pnpm --dir web build
+      - run: node scripts/verify-dist.mjs
