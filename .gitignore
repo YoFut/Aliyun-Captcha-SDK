@@ -45,3 +45,20 @@ CLAUDE.local.md
 *.mp4
 *.mp3
 **/.DS_Store
+
+# 本地凭据与构建缓存不进入 SDK 源码。
+.env
+.env.*
+!.env.example
+config.toml
+configs/*.local.*
+web/node_modules/
+web/dist/
+web/demo-dist/
+.gocache/
+build/
+*.exe
+*.test
+coverage.out
+.DS_Store
+.idea/
