@@ -1,0 +1,83 @@
+# 版本门禁：仅主线检查通过后创建不可变附注标签，不发布 Release 或部署。
+name: Git Tag With Version
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      approved_sha:
+        description: '确认 MAJOR 升级时填写当前 main 的完整 SHA；普通检查留空'
+        required: false
+        type: string
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: 版本与 Go 门禁
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: 验证版本契约
+        run: node --test scripts/version.test.mjs scripts/forge-api.test.mjs
+      - name: 编译与静态检查
+        run: |
+          go build ./...
+          go vet ./...
+      - name: 自有代码单元测试
+        run: go test ./...
+
+  frontend:
+    name: 前端门禁
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install --global pnpm@10.26.2
+      - run: pnpm --dir web install --frozen-lockfile
+      - run: pnpm --dir web test
+      - run: pnpm --dir web exec tsc --noEmit
+      - run: pnpm --dir web build
+      - run: node scripts/verify-dist.mjs
+
+  version_tag:
+    name: 创建正式版本标签
+    needs: [checks, frontend]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      code: write
+      pull-requests: read
+    concurrency:
+      group: version-tag-${{ github.repository }}-main
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: 推导并创建附注标签
+        env:
+          VERSION_PLATFORM: gitea
+          VERSION_BRANCH: main
+          VERSION_REMOTE: origin
+          VERSION_REF: ${{ github.ref }}
+          VERSION_EVENT_NAME: ${{ github.event_name }}
+          VERSION_EVENT_PATH: ${{ github.event_path }}
+          GITEA_REPOSITORY: ${{ github.repository }}
+          GITEA_SERVER_URL: ${{ github.server_url }}
+          VERSION_BOT_TOKEN: ${{ secrets.VERSION_BOT_TOKEN || secrets.GITEA_TOKEN }}
+        run: node scripts/version-tag.mjs

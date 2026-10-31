@@ -167,6 +167,8 @@ Go 示例只监听 `127.0.0.1:8080`，提供 `GET /captcha/config` 和 `POST /ca
 
 ## 验证与交付
 
+版本由 [GTWV 自动版本门禁](docs/version-control.md) 管理：`fix` 升 PATCH、`feat` 升 MINOR、破坏性变更需精确 SHA 确认 MAJOR。仅 `main` 在 Go、前端和版本测试全部通过后自动创建附注标签，Release 保留人工启动；`make version` 可查看本地开发版身份。
+
 ```powershell
 go test ./...
 go vet ./...
