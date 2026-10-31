@@ -1,0 +1,126 @@
+openapi: 3.1.0
+info:
+  title: 阿里云验证码 SDK 本地示例
+  version: 0.1.0
+  description: |
+    回环演示服务，用于公开配置及验证码验签，不签发业务权限或持久化验证票据。
+    所有失败响应固定使用 code、message、data、request_id；未知路径同样返回此契约。
+servers:
+  - url: http://127.0.0.1:8080
+paths:
+  /captcha/config:
+    get:
+      summary: 读取公开前端配置
+      responses:
+        '200':
+          description: 仅包含公开实例与场景配置
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FrontendConfig'
+        '405':
+          $ref: '#/components/responses/Failure'
+  /captcha/verify:
+    post:
+      summary: 校验验证码参数
+      description: |
+        请求体最多 64 KiB，且只能包含单个 JSON 对象和声明的字段。
+        kind 对应服务端配置的场景 ID；验证参数原样交给阿里云，失败不泄露请求内容。
+        更新说明：
+        2026-10-31
+        - 失败响应统一为四字段错误契约，不再返回纯文本或 verified=false。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [kind, captcha_verify_param]
+              properties:
+                kind:
+                  $ref: '#/components/schemas/Kind'
+                captcha_verify_param:
+                  type: string
+                  minLength: 1
+                  description: 客户端返回的原始验证码参数，禁止记录日志
+      responses:
+        '200':
+          description: 阿里云服务端明确通过
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [verified]
+                properties:
+                  verified:
+                    type: boolean
+                    const: true
+        '400':
+          $ref: '#/components/responses/Failure'
+        '403':
+          $ref: '#/components/responses/Failure'
+        '404':
+          $ref: '#/components/responses/Failure'
+        '405':
+          $ref: '#/components/responses/Failure'
+        '413':
+          $ref: '#/components/responses/Failure'
+        '500':
+          $ref: '#/components/responses/Failure'
+        '503':
+          $ref: '#/components/responses/Failure'
+components:
+  responses:
+    Failure:
+      description: 安全错误，data 固定为 null，request_id 对应响应头 X-Request-ID
+      headers:
+        X-Request-ID:
+          schema:
+            type: string
+          description: 服务端生成的随机关联标识
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Failure'
+  schemas:
+    Kind:
+      type: string
+      enum: [traceless, one-click, slider, puzzle, image-restore]
+    FrontendConfig:
+      type: object
+      additionalProperties: false
+      required: [region, prefix, scenes]
+      properties:
+        region:
+          type: string
+          enum: [cn, sgp]
+        prefix:
+          type: string
+          minLength: 1
+        scenes:
+          type: object
+          minProperties: 1
+          propertyNames:
+            $ref: '#/components/schemas/Kind'
+          additionalProperties:
+            type: string
+            minLength: 1
+    Failure:
+      type: object
+      additionalProperties: false
+      required: [code, message, data, request_id]
+      properties:
+        code:
+          type: integer
+          enum: [40001, 40301, 40401, 40501, 41301, 50001, 50301]
+        message:
+          type: string
+          description: 面向调用方的固定安全文案
+        data:
+          type: 'null'
+        request_id:
+          type: string
+          pattern: '^[A-Za-z0-9_-]+$'
+          description: 无业务语义的随机请求标识
