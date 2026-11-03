@@ -7,6 +7,8 @@ export interface CaptchaOptions extends CaptchaConfig {
   kind: CaptchaKind;
   mode?: 'popup' | 'embed';
   buttonText?: string;
+  // autoStart 在实例就绪后启动验证，避免宿主按钮后还需再次点击。
+  autoStart?: boolean;
   slideStyle?: { width: number; height: number };
   onToken?: (param: string, kind: CaptchaKind) => void;
   onVerify?: (param: string, kind: CaptchaKind) => Promise<{ verified: boolean }>;
@@ -16,7 +18,7 @@ export interface CaptchaOptions extends CaptchaConfig {
 }
 // CaptchaHandle 定义活动实例的控制契约；销毁后不可继续操作，show 在未就绪或无痕场景下抛错。
 export interface CaptchaHandle { reset(): void; update(options: CaptchaOptions): void; destroy(): void; show(): void }
-type VendorInstance = { show?: () => void; hide?: () => void };
+type VendorInstance = { show?: () => void; hide?: () => void; startTracelessVerification?: () => void };
 type VendorOptions = { SceneId: string; mode: string; element: string; button: string; success: (param: string) => void; fail: (reason: unknown) => void; getInstance: (instance: VendorInstance) => void; onError: (error: unknown) => void; slideStyle?: { width: number; height: number } };
 declare global { interface Window { AliyunCaptchaConfig?: {region: string; prefix: string}; initAliyunCaptcha?: (options: VendorOptions) => void; __wavesmanCaptchaLoader?: { config: {region: string; prefix: string}; promise: Promise<void> }; __wavesmanCaptchaLease?: symbol } }
 const url = 'https://o.alicdn.com/captcha-frontend/aliyunCaptcha/AliyunCaptcha.js';
@@ -57,9 +59,9 @@ export function mountAliyunCaptcha(container: HTMLElement, initial: CaptchaOptio
   function initialize() {
     const current = ++generation, snapshot = options;
     instance?.hide?.(); instance = undefined; root.replaceChildren();
-    let consumed = false;
+    let consumed = false, started = false;
     const element = document.createElement('div'), button = document.createElement('button');
-    const id = `wavesman-captcha-${++serial}`; element.id = `${id}-element`; button.id = `${id}-button`; button.type = 'button'; button.textContent = snapshot.buttonText ?? '开始验证';
+    const id = `wavesman-captcha-${++serial}`; element.id = `${id}-element`; button.id = `${id}-button`; button.type = 'button'; button.disabled = true; button.textContent = snapshot.buttonText ?? (snapshot.autoStart ? '重新打开验证' : '开始验证');
     root.append(element, button);
     const active = () => !destroyed && generation === current;
     const report = (error: unknown) => { if (active()) snapshot.onError?.(error); };
@@ -71,7 +73,16 @@ export function mountAliyunCaptcha(container: HTMLElement, initial: CaptchaOptio
       window.initAliyunCaptcha!({ SceneId: scene, mode: snapshot.mode ?? 'popup', element: `#${element.id}`, button: `#${button.id}`, slideStyle: snapshot.slideStyle,
         // 一次初始化只消费一次参数；重试必须重新初始化。
         success: param => { if (!active() || consumed) return; consumed = true; snapshot.onToken?.(param, snapshot.kind); const verify = snapshot.onVerify; if (!active() || !verify) return; Promise.resolve().then(() => verify(param, snapshot.kind)).then(result => { if (!active()) return; if (result?.verified === true) snapshot.onVerified?.(param, snapshot.kind); else snapshot.onFail?.(new Error('后端验签未通过，请重试')); }).catch(report); },
-        fail: reason => { if (active()) snapshot.onFail?.(reason); }, getInstance: value => { if (active()) instance = value; else value.hide?.(); }, onError: report });
+        fail: reason => { if (active()) snapshot.onFail?.(reason); }, getInstance: value => {
+          if (!active()) { value.hide?.(); return; }
+          instance = value; button.disabled = false;
+          if (snapshot.autoStart && !started) {
+            started = true;
+            const start = snapshot.kind === 'traceless' ? value.startTracelessVerification : value.show;
+            if (!start) { report(new Error('验证码实例不支持启动验证')); return; }
+            try { start.call(value); } catch (error) { report(error); }
+          }
+        }, onError: report });
     }).catch(report);
   }
   initialize();
