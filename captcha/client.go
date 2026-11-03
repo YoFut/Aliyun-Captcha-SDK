@@ -78,7 +78,7 @@ var (
 	ErrRejected = errors.New("验证码验证未通过")
 	// ErrService 表示服务响应缺失或顶层状态异常。
 	ErrService = errors.New("验证码服务响应异常")
-	// ErrTransport 表示服务请求失败，且不包含供应商原始错误。
+	// ErrTransport 表示服务请求失败；底层原因保留在 Error 中，仅供后端诊断。
 	ErrTransport = errors.New("验证码服务请求失败")
 )
 
@@ -149,7 +149,7 @@ func ConfigFromEnv() (Config, error) {
 
 // NewClient 构造客户端；未配置凭据时使用阿里云默认凭据链。
 // 参数 opts 指定配置、凭据或底层调用器；未指定 WithConfig 时读取环境配置。
-// 返回可用客户端；配置无效或初始化失败时返回 ErrConfig，不包含敏感凭据。
+// 返回可用客户端；配置无效返回 ErrConfig，初始化失败另保留底层错误供后端诊断。
 func NewClient(opts ...Option) (*Client, error) {
 	o := options{}
 	for _, opt := range opts {
@@ -216,7 +216,7 @@ func NewClient(opts ...Option) (*Client, error) {
 			var err error
 			cred, err = credentials.NewCredential(&credentials.Config{Type: dara.String("ecs_ram_role"), RoleName: dara.String(c.RoleName)})
 			if err != nil {
-				return nil, ErrConfig
+				return nil, &Error{kind: ErrConfig, Cause: err}
 			}
 		}
 		if cred == nil && c.AccessKeyID != "" {
@@ -227,20 +227,20 @@ func NewClient(opts ...Option) (*Client, error) {
 			var err error
 			cred, err = credentials.NewCredential(&credentials.Config{Type: dara.String(typ), AccessKeyId: dara.String(c.AccessKeyID), AccessKeySecret: dara.String(c.AccessKeySecret), SecurityToken: dara.String(c.SecurityToken)})
 			if err != nil {
-				return nil, ErrConfig
+				return nil, &Error{kind: ErrConfig, Cause: err}
 			}
 		}
 		if cred == nil {
 			var err error
 			cred, err = credentials.NewCredential(nil)
 			if err != nil {
-				return nil, ErrConfig
+				return nil, &Error{kind: ErrConfig, Cause: err}
 			}
 		}
 		var err error
 		caller, err = sdk.NewClient(&openapi.Config{Credential: cred, Endpoint: dara.String(endpoint)})
 		if err != nil {
-			return nil, ErrConfig
+			return nil, &Error{kind: ErrConfig, Cause: err}
 		}
 	}
 	return &Client{caller: caller, frontend: FrontendConfig{Region: c.Region, Prefix: c.Prefix, Scenes: scenes}, timeout: c.Timeout}, nil
@@ -258,7 +258,7 @@ func (c *Client) FrontendConfig() FrontendConfig {
 
 // Verify 原样提交前端参数，并使用服务端预配置的场景 ID。只有明确通过时返回 nil。
 // ctx 控制取消和截止时间；kind 选择已配置场景；captchaVerifyParam 为前端原始参数。
-// 失败时返回分类错误或上下文错误，不返回验证参数、密钥或供应商原始消息。
+// 失败时保留分类、供应商消息及底层错误链；调用方须在 HTTP 边界过滤诊断信息。
 func (c *Client) Verify(ctx context.Context, kind Kind, captchaVerifyParam string) error {
 	if ctx == nil || strings.TrimSpace(captchaVerifyParam) == "" || !validKind(kind) {
 		return ErrInput
@@ -271,16 +271,21 @@ func (c *Client) Verify(ctx context.Context, kind Kind, captchaVerifyParam strin
 	defer cancel()
 	resp, err := c.caller.VerifyIntelligentCaptchaWithContext(ctx, &sdk.VerifyIntelligentCaptchaRequest{CaptchaVerifyParam: dara.String(captchaVerifyParam), SceneId: dara.String(scene)}, &dara.RuntimeOptions{})
 	if err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		return ErrTransport
+		return &Error{kind: ErrTransport, Cause: errors.Join(err, ctx.Err())}
+	}
+	diagnostic := &Error{kind: ErrService}
+	if resp != nil && resp.Body != nil {
+		diagnostic.Code = dara.StringValue(resp.Body.Code)
+		diagnostic.Message = dara.StringValue(resp.Body.Message)
+		diagnostic.RequestID = dara.StringValue(resp.Body.RequestId)
 	}
 	if resp == nil || resp.StatusCode == nil || *resp.StatusCode != 200 || resp.Body == nil || resp.Body.Success == nil || !*resp.Body.Success || resp.Body.Code == nil || *resp.Body.Code != "Success" || resp.Body.Result == nil || resp.Body.Result.VerifyResult == nil {
-		return ErrService
+		return diagnostic
 	}
 	if !*resp.Body.Result.VerifyResult {
-		return ErrRejected
+		diagnostic.kind = ErrRejected
+		diagnostic.Code = dara.StringValue(resp.Body.Result.VerifyCode)
+		return diagnostic
 	}
 	return nil
 }
