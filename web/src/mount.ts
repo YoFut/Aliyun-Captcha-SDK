@@ -17,7 +17,7 @@ export interface CaptchaOptions extends CaptchaConfig {
   onError?: (error: unknown) => void;
 }
 // CaptchaHandle 定义活动实例的控制契约；销毁后不可继续操作，show 在未就绪或无痕场景下抛错。
-export interface CaptchaHandle { reset(): void; update(options: CaptchaOptions): void; destroy(): void; show(): void }
+export interface CaptchaHandle { reset(): void; update(options: CaptchaOptions): void; destroy(): void; show(): void; start(): void }
 type VendorInstance = { show?: () => void; hide?: () => void; startTracelessVerification?: () => void };
 type VendorOptions = { SceneId: string; mode: string; element: string; button: string; success: (param: string) => void; fail: (reason: unknown) => void; getInstance: (instance: VendorInstance) => void; onError: (error: unknown) => void; slideStyle?: { width: number; height: number } };
 declare global { interface Window { AliyunCaptchaConfig?: {region: string; prefix: string}; initAliyunCaptcha?: (options: VendorOptions) => void; __wavesmanCaptchaLoader?: { config: {region: string; prefix: string}; promise: Promise<void> }; __wavesmanCaptchaLease?: symbol } }
@@ -53,8 +53,17 @@ function load(config: {region: string; prefix: string}): Promise<void> {
 export function mountAliyunCaptcha(container: HTMLElement, initial: CaptchaOptions): CaptchaHandle {
   if (window.__wavesmanCaptchaLease) throw new Error('页面已有活动验证码实例，请先销毁该实例');
   const lease = Symbol('captcha'); window.__wavesmanCaptchaLease = lease;
-  let options = initial, generation = 0, destroyed = false, instance: VendorInstance | undefined;
+  let options = initial, generation = 0, destroyed = false, instance: VendorInstance | undefined, pendingStart = false;
   const root = document.createElement('div'); container.appendChild(root);
+  // start 在未就绪时保留一次启动意图，不重建预加载的实例。
+  function start() {
+    if (destroyed) return;
+    if (!instance) { pendingStart = true; return; }
+    pendingStart = false;
+    const action = options.kind === 'traceless' ? instance.startTracelessVerification : instance.show;
+    if (!action) { options.onError?.(new Error('验证码实例不支持启动验证')); return; }
+    try { action.call(instance); } catch (error) { options.onError?.(error); }
+  }
   // initialize 为每一轮验证创建独立代次，使旧回调和在途验签结果失效。
   function initialize() {
     const current = ++generation, snapshot = options;
@@ -76,8 +85,8 @@ export function mountAliyunCaptcha(container: HTMLElement, initial: CaptchaOptio
         fail: reason => { if (active()) snapshot.onFail?.(reason); }, getInstance: value => {
           if (!active()) { value.hide?.(); return; }
           instance = value; button.disabled = false;
-          if (snapshot.autoStart && !started) {
-            started = true;
+          if ((snapshot.autoStart || pendingStart) && !started) {
+            started = true; pendingStart = false;
             const start = snapshot.kind === 'traceless' ? value.startTracelessVerification : value.show;
             if (!start) { report(new Error('验证码实例不支持启动验证')); return; }
             try { start.call(value); } catch (error) { report(error); }
@@ -86,5 +95,5 @@ export function mountAliyunCaptcha(container: HTMLElement, initial: CaptchaOptio
     }).catch(report);
   }
   initialize();
-  return { reset() { if (!destroyed) initialize(); }, update(next) { if (!destroyed) { options = next; initialize(); } }, destroy() { if (!destroyed) { destroyed = true; generation++; instance?.hide?.(); instance = undefined; root.remove(); if (window.__wavesmanCaptchaLease === lease) delete window.__wavesmanCaptchaLease; } }, show() { if (destroyed) throw new Error('验证码已销毁'); if (options.kind === 'traceless') throw new Error('无痕验证不支持 show'); if (!instance?.show) throw new Error('验证码尚未就绪或不支持 show'); instance.show(); } };
+  return { start, reset() { if (!destroyed) { pendingStart = false; initialize(); } }, update(next) { if (!destroyed) { options = next; pendingStart = false; initialize(); } }, destroy() { if (!destroyed) { destroyed = true; generation++; instance?.hide?.(); instance = undefined; root.remove(); if (window.__wavesmanCaptchaLease === lease) delete window.__wavesmanCaptchaLease; } }, show() { if (destroyed) throw new Error('验证码已销毁'); if (options.kind === 'traceless') throw new Error('无痕验证不支持 show'); if (!instance?.show) throw new Error('验证码尚未就绪或不支持 show'); instance.show(); } };
 }

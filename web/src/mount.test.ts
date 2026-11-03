@@ -53,3 +53,29 @@ describe('宿主单次点击启动', () => {
     expect(show).not.toHaveBeenCalled(); manual.destroy();
   });
 });
+
+describe('预加载实例启动', () => {
+  it.each(['one-click', 'traceless'] as const)('等待 %s 就绪后启动一次且不重复初始化', async kind => {
+    let config: any;
+    const init = vi.fn(x => { config = x; }); window.initAliyunCaptcha = init;
+    const action = vi.fn();
+    const handle = mountAliyunCaptcha(document.body, options(kind));
+    await tick();
+    expect(init).toHaveBeenCalledTimes(1);
+    handle.start(); handle.start();
+    expect(action).not.toHaveBeenCalled();
+    config.getInstance({show: action, startTracelessVerification: action});
+    config.getInstance({show: action, startTracelessVerification: action});
+    expect(action).toHaveBeenCalledTimes(1);
+    expect(init).toHaveBeenCalledTimes(1);
+    handle.start(); expect(action).toHaveBeenCalledTimes(2);
+    handle.destroy(); handle.start(); expect(action).toHaveBeenCalledTimes(2);
+  });
+  it('重置取消旧代次待启动意图', async () => {
+    let config: any; window.initAliyunCaptcha = x => { config = x; };
+    const handle = mountAliyunCaptcha(document.body, options()); await tick();
+    const old = config, show = vi.fn(); handle.start(); handle.reset(); await tick();
+    old.getInstance({show}); config.getInstance({show});
+    expect(show).not.toHaveBeenCalled(); handle.destroy();
+  });
+});
