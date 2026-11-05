@@ -25,3 +25,57 @@ describe('验证码封装', () => {
   it('验签失败或抛错均不通过', async () => { let config: any; window.initAliyunCaptcha = x => { config = x; }; const verified = vi.fn(), fail = vi.fn(), error = vi.fn(); const h = mountAliyunCaptcha(document.body, {...options(), onVerify: async () => ({verified: false}), onVerified: verified, onFail: fail, onError: error}); await tick(); config.success('a'); await tick(); expect(fail).toHaveBeenCalledTimes(1); h.update({...options(), onVerify: async () => { throw new Error('失败'); }, onVerified: verified, onError: error}); await tick(); config.success('b'); await tick(); expect(error).toHaveBeenCalled(); expect(verified).not.toHaveBeenCalled(); h.destroy(); });
   it('超时可重试且配置无效不加载脚本', async () => { vi.useFakeTimers(); const error = vi.fn(); const h = mountAliyunCaptcha(document.body, {...options(), onError: error}); await vi.advanceTimersByTimeAsync(15000); expect(error).toHaveBeenCalled(); expect(document.querySelector('script')).toBeNull(); h.reset(); expect(document.querySelectorAll('script')).toHaveLength(1); h.destroy(); await vi.advanceTimersByTimeAsync(15000); vi.useRealTimers(); delete window.__wavesmanCaptchaLoader; delete window.AliyunCaptchaConfig; const bad = mountAliyunCaptcha(document.body, {...options(), prefix: '', onError: error}); await tick(); expect(document.querySelector('script')).toBeNull(); bad.destroy(); });
 });
+
+describe('宿主单次点击启动', () => {
+  it('实例就绪后只启动一次，延迟和旧实例不会启动', async () => {
+    let config: any; const init = vi.fn(x => { config = x; }); window.initAliyunCaptcha = init;
+    const show = vi.fn(), hide = vi.fn();
+    const handle = mountAliyunCaptcha(document.body, {...options(), autoStart: true});
+    expect((document.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+    await tick();
+    expect(init).toHaveBeenCalledTimes(1); expect(show).not.toHaveBeenCalled();
+    config.getInstance({show, hide}); config.getInstance({show, hide});
+    expect(show).toHaveBeenCalledTimes(1);
+    const old = config; handle.reset(); await tick();
+    old.getInstance({show, hide}); expect(show).toHaveBeenCalledTimes(1);
+    config.getInstance({show, hide}); expect(show).toHaveBeenCalledTimes(2);
+    handle.destroy();
+  });
+  it('无痕形态调用专用启动方法，默认模式仍由按钮触发', async () => {
+    let config: any; window.initAliyunCaptcha = x => { config = x; };
+    const show = vi.fn(), start = vi.fn();
+    const handle = mountAliyunCaptcha(document.body, {...options('traceless'), autoStart: true});
+    await tick(); config.getInstance({show, startTracelessVerification: start});
+    expect(start).toHaveBeenCalledTimes(1); expect(show).not.toHaveBeenCalled();
+    handle.destroy();
+    const manual = mountAliyunCaptcha(document.body, options());
+    await tick(); config.getInstance({show});
+    expect(show).not.toHaveBeenCalled(); manual.destroy();
+  });
+});
+
+describe('预加载实例启动', () => {
+  it.each(['one-click', 'traceless'] as const)('等待 %s 就绪后启动一次且不重复初始化', async kind => {
+    let config: any;
+    const init = vi.fn(x => { config = x; }); window.initAliyunCaptcha = init;
+    const action = vi.fn();
+    const handle = mountAliyunCaptcha(document.body, options(kind));
+    await tick();
+    expect(init).toHaveBeenCalledTimes(1);
+    handle.start(); handle.start();
+    expect(action).not.toHaveBeenCalled();
+    config.getInstance({show: action, startTracelessVerification: action});
+    config.getInstance({show: action, startTracelessVerification: action});
+    expect(action).toHaveBeenCalledTimes(1);
+    expect(init).toHaveBeenCalledTimes(1);
+    handle.start(); expect(action).toHaveBeenCalledTimes(2);
+    handle.destroy(); handle.start(); expect(action).toHaveBeenCalledTimes(2);
+  });
+  it('重置取消旧代次待启动意图', async () => {
+    let config: any; window.initAliyunCaptcha = x => { config = x; };
+    const handle = mountAliyunCaptcha(document.body, options()); await tick();
+    const old = config, show = vi.fn(); handle.start(); handle.reset(); await tick();
+    old.getInstance({show}); config.getInstance({show});
+    expect(show).not.toHaveBeenCalled(); handle.destroy();
+  });
+});

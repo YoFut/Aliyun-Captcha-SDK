@@ -18,6 +18,6 @@ export function AliyunCaptcha({ className, ...options }: AliyunCaptchaProps) {
     };
     const handle = mountAliyunCaptcha(element.current!, proxy);
     return () => handle.destroy();
-  }, [options.region, options.prefix, options.kind, options.mode, options.buttonText, options.scenes[options.kind], options.slideStyle?.width, options.slideStyle?.height]);
+  }, [options.region, options.prefix, options.kind, options.mode, options.buttonText, options.autoStart, options.scenes[options.kind], options.slideStyle?.width, options.slideStyle?.height]);
   return <div ref={element} className={className} />;
 }

@@ -188,3 +188,15 @@ Go 测试覆盖响应判定、场景固定、环境配置、公开配置隔离�
 - [场景管理](https://help.aliyun.com/zh/captcha/captcha2-0/user-guide/scene-management)
 
 本项目对服务异常采用明确报错策略，由宿主决定业务降级；不会把阿里云容灾回调或 HTTP 成功直接当作业务通过。
+
+## 后端诊断与公开响应边界
+
+`Verify` 失败时通过 `errors.Is` 保留 `ErrTransport`、`ErrService`、`ErrRejected` 等分类，通过 `errors.As(err, &detail)` 读取 `*captcha.Error` 的 `Code`、`Message`、`RequestID`；传输或初始化错误通过 `Unwrap` 保留原始原因。上下文取消与原始传输原因可以同时识别。
+
+这些诊断仅供调用方后端使用，不直接序列化为 HTTP 响应，也不未经脱敏写日志。浏览器只应收到调用方定义的安全错误码、提示和请求关联标识。
+
+浏览器组件按照阿里云官方协议需要 `region`、`prefix` 和当前 `SceneId`；这些是公开初始化参数。宿主只应返回当前允许场景，不应返回完整配置、服务端 Endpoint、凭据或供应商诊断。参考：https://help.aliyun.com/zh/captcha/captcha2-0/user-guide/new-architecture-for-web-and-h5-client-access 。
+
+配置 autoStart: true 可在 getInstance 确认实例就绪后立即启动当前验证，适用于宿主已经提供开始验证按钮的场景。弹出式使用 show()，无痕使用 startTracelessVerification()；默认仍等待用户点击 SDK 按钮。同一初始化代次仅自动启动一次，销毁或重置后的旧回调不会启动验证。
+
+需要在打开业务弹窗时预加载验证码，可先用 autoStart: false 挂载；宿主按钮完成业务挑战绑定后调用返回句柄的 start()。start() 会复用已有实例；尚未就绪时合并为一次待启动请求，兼容普通弹窗与无痕验证。reset/update 会取消上一轮待启动请求，destroy 后调用不再启动。预加载参数不应包含业务令牌或服务端凭据。
